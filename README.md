@@ -3,92 +3,97 @@ RStudio in a Docker Container
 
 ## What is this?
 
-This project is an example of running RStudio from within a Docker container.
-In addition to the basic RStudio server, the container also has the knitr and
-Rmarkdown libraries so it is easy to create nicely formatted output. There is 
-also just enough of TeX to allow knitr to generate PDF output.
+This is a Docker image loaded with software for performing microbiome
+analysis on amplicon (e.g. 16S rRNA).  It also contains RStudio
+server, the knitr and Rmarkdown libraries necessary for knitting
+Rmarkdown documents, and enough of TeX to allow knitr to generate PDF output.
 
-## How to build 
-
-Build the container with the command:
-
-```
-sudo docker build -t="rstudio" .
-```
-
-Since the build file points directly at quite a few R extensions in the CRAN 
-repository, and since those extension are being updated, there is the distinct possibility
-that the build file will complain about not being able fetch a specific library.
-If this happens, look through the file list here: http://cran.r-project.org/src/contrib/
-to find the new version of the library and update the Dockerfile.
 
 ## How to run
 
+### Basic
+The following command will download the image from Docker Hub and run
+it.
+
 Run using the default password from the Dockerfile build script:
 ```
-sudo docker run -d -p 0.0.0.0:8787:8787 -i -t rstudio
+docker run --name ibiem \
+	-d -p 8787:8787 \
+	-e USERPASS=badpa55word \
+	-t ibiem/ibiem2018
 ```
 
-PROTIP: You will probably want to  something more secure than an account
-named guest with the password guest, so you will probably want pass in the
-guest user password when you instance the container.
+After running the command, open http://localhost:8787 in a web
+browser.  When you get the RStudio login, the username is “guest” and
+the password is “badpa55word”.
+
+### More secure
+The basic command above is a good test, but there are some ways to
+make run the image a bit more securely.
+
+First, follow [these instructions](#shutdown-the-container) to
+shutdown the container you just started.
+
+#### Better password
+Instead of “badpa55word” substitute a better password in the `-e
+USERPASS=badpa55word` part of the command.  You will then use this at
+the RStudio login. For example:
 
 ```
-docker run -d -p 0.0.0.0:8787:8787 -e USERPASS=badpassword  -i -t rstudio
+docker run --name ibiem \
+	-d -p 8787:8787 \
+	-e USERPASS=ThisIsA8etterPa55wordMaybe \
+	-t ibiem/ibiem2018
 ```
 
-You probably want the user's home directory to persist, so if the container restarts
-the users' work is not blown away. To do this, map a home directory like this:
+#### Restrict access to local computer
+With the [basic run command](#basic), anyone on the internet can
+connect to your container with a web browser (and the password).  You
+can change the command to restrict it so that only a browser running
+on the same computer can connect using this command:
+
 ```
-docker run -d -e USERPASS=badpassword  \
-        -v /external/directory/for/user:/home/guest \
-        -p 0.0.0.0:8787:8787 -i -t rstudio
+docker run --name ibiem \
+	-d -p 127.0.0.1\:8787\:8787 \
+	-e USERPASS=ThisIsA8etterPa55wordMaybe \
+	-t ibiem/ibiem2018
 ```
 
-## How to access
+Of course this is only appropriate if you are running the docker image
+and the web browser you are using to access it on the same computer.
 
-To access the app, point your web browser at
-    http://your.hostname.here:8787/
-
-You will be prompted to login. Use the username 'guest' and the password 'badpassword'
-
-
-## Run a large scale RStudio container farm
-
-Suppose you want to run RStudio for a couple hundred users, and want to keep 
-each user sequestered as much as possible. To do this you would want to run an
-Rstudio container for each user, and map the user's home directory to an external
-volume. 
-
-You would also need to map each user to a different port, and keep track of
-the mapping of user to port and external home directory volume -- and you need
-to have unique passwords for each user.
-
-With all this information in hand, you could construct URLs specific to each user and
-after they have authenticated at some other web site, redirect them to the appropriate
-container and automatically log them in. Ideally, you would also run the entire RStudio 
-session over https so that everything is encrypted.
-
-To accomplish all of this, we use two additional containerized services:
-- nginx (https://github.com/nginxinc/docker-nginx) 
-- docker-gen (https://github.com/jwilder/docker-gen).
-
-Nginx provides https support by accepting https connections and proxying them to the appropriate
-rstudio container port on the local server. Nginx needs a configuration file to to know what
-to do, and the prospect of maintaining a config file for over a hundred rstudio containers
-was not appealing, so we take advantage of docker-gen to dynamically update the nginx config as containers are started/stopped.
-
-Docker-gen tracks activity (container starts/stops) from the docker daemon, and based
-on the VIRTUAL_HOST environmental variable for the containers can select an appropriate
-template to use for updating the nginx config file. This is cool because it means that
-we are not faced with manually updating the nginx config - instead docker-gen updates it
-for us. 
-
-With a little bit of shell scripting it is possible to read a mapping file that lists users and passwords for RStudio users, and based on this file launch RDtudio containers -- something you
-will want to be able to do when your server starts. 
-
-For details on the configurations of these services used at Duke and how to script startup of
-a cluster of rstudio instances front-ended by nginx and docker-gen see
-https://github.com/mccahill/docker-gen/tree/duke
+### Access files on host computer
+By default Docker containers can’t access anything on the host
+computer, its basically a “What happens in the docker container, stays
+in the docker container” situation. This means that by default
+anything that you do in the docker container disappears when you shut
+it down.  This is not the end of the world if you do all your work in
+a git repo within the container and make sure to regularly commit and
+push, but it can be inconvenient.  The common solution to this problem
+is to allow the container to connect a directory within the container to a directory on the host computer, so anything you save to the directory in the container is really being saved to the host computer.  You can do this with by adding `-v HOST_COMPUTER_DIRECTORY:CONTAINER_DIRECTORY` to the docker run command, so for example the following commands would make a subdirectory called “platypus_project” in the home directory on your host computer and connect it to a directory called “workspace” within the container.
 
 
+```
+docker run --name ibiem \
+	-d -p 127.0.0.1\:8787\:8787 \
+	-e USERPASS=ThisIsA8etterPa55wordMaybe \
+	-v $HOME/platypus_project:/home/guest/workspace \
+	-t ibiem/ibiem2018
+```
+
+Try to run this, then save a file in /home/guest/workspace within the container, then look in “platypus_project” in the home directory of your computer to see if the file showed up.
+
+
+## Shutdown the container
+You can check what containers are running with the command
+`docker ps -a`, which should give you something like the following
+(CONTAINER ID and STATUS will be different).
+
+```
+CONTAINER ID        IMAGE               COMMAND                  CREATED             STATUS                     PORTS                    NAMES
+746fa56d80ff        ibiem/ibiem2018     "/usr/bin/supervisord"   6 minutes ago       Up 6 minutes               0.0.0.0:8787->8787/tcp   ibiem
+```
+
+If you ran the container using any of the above commands, you should
+be able to shut it down with `docker rm -f ibiem`, then you can
+confirm with `docker ps -a`, which should show no containers running now.
